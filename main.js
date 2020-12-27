@@ -70,9 +70,14 @@ function clearInnerText() {
 function hideCursor() {
     var body = document.getElementById("body");
     body.style.cursor = "none";
+    var cursorMoveEvent = null;
     body.onmousemove = function() {
         body.style.cursor = "auto";
-        setTimeout(hideCursor,1500);
+        if (cursorMoveEvent) {
+            clearTimeout(cursorMoveEvent);
+            cursorMoveEvent = null;
+        }
+        cursorMoveEvent = setTimeout(hideCursor,1500);
     }
 }
 
@@ -80,104 +85,131 @@ function hideCursor() {
  * Waits until the next subtitle
  */
 function pause(data,i,dur) {
+    setTimeout(function(){showSubtitle(data,i+1,0)},dur);
     clearInnerText();
-    setTimeout(function(){showSubtitle(data,i+1)},dur);
 }
 
 /**
  * Shows the given subtitle
  */
-function showSubtitle(data,i) {
+function showSubtitle(data,i,offset) {
     var thisEntry = data[i];
     if (thisEntry) {
-        setInnerTextBase(thisEntry.text);
         if (thisEntry.pause) {
-            setTimeout(function(){pause(data,i,thisEntry.pause)},thisEntry.duration);
+            setTimeout(function(){pause(data,i,thisEntry.pause)},thisEntry.duration-offset);
         } else {
-            setTimeout(function(){showSubtitle(data,i+1)},thisEntry.duration);
+            setTimeout(function(){showSubtitle(data,i+1,0)},thisEntry.duration-offset);
         }
+        setInnerTextBase(thisEntry.text);
+    } else {
+        console.log("Finished at index "+i.toString());
     }
 }
 
 /**
  * 5 second countdown to subtitle start
  */
-function countDown(n,data) {
+function countDown(n,data,startPause,startIndex) {
     setInnerTextBase(n.toString());
-    if (n == 0) {
+    if (n < 1) {
         hideCursor();
-        if (data[0].start <= 1000) {
-            setTimeout(function(){showSubtitle(data,0)},data[0].start);
+        if (startPause <= 0) {
+            showSubtitle(data,startIndex,startPause);
+        }
+        else if (startPause <= 1000) {
+            setTimeout(function(){showSubtitle(data,startIndex,0)},startPause);
         } else {
-            setTimeout(function(){pause(data,-1,data[0].start-1000)},1000);
+            setTimeout(function(){pause(data,startIndex-1,startPause-1000)},1000);
         }
     } else {
-        setTimeout(function(){countDown(n-1,data);},1000);
+        setTimeout(function(){countDown(n-1,data,startPause,startIndex);},1000);
     }
 }
 
 /**
  * Called when a file is selected
  */
-function onFileSelected(input) {
-    input.parentNode.style.backgroundColor = "#000000";
-    let file = input.files[0];
-    let reader = new FileReader();
-    reader.readAsText(file);
-    reader.onload = function() {
-        var data = [];
-        var lines = reader.result.split("\n");
-        var currEntry = 0;
-        input.parentNode.removeChild(input);
-	setInnerTextBase("Processing subtitles...");
-        var entryPosition = 0;
-        for (i=0; i<lines.length; i++) {
-            entryPosition += 1;
-            if (lines[i] == "") {
-                entryPosition = 0;
-            }
-            switch(entryPosition) {
-                case 0: //Empty space
-                    break;
-                case 1: //The index
-                    currEntry = Number(lines[i]);
-                    data.push({
-                        start: null,
-                        end: null,
-                        text: null,
-                        duration: null,
-                        pause: null
-                    });
-                    break;
-                case 2: //The times
-                    var regex = new RegExp("(\\\d\\\d):(\\\d\\\d):(\\\d\\\d),(\\\d\\\d\\\d) --> (\\\d\\\d):(\\\d\\\d):(\\\d\\\d),(\\\d\\\d\\\d)");
-                    var found = lines[i].match(regex);
-                    var startHours = Number(found[1]);
-                    var startMins = Number(found[2]) + 60*startHours;
-                    var startSecs = Number(found[3]) + 60*startMins;
-                    data[currEntry-1].start = Number(found[4]) + 1000*startSecs;
-                    var endHours = Number(found[5]);
-                    var endMins = Number(found[6]) + 60*endHours;
-                    var endSecs = Number(found[7]) + 60*endMins;
-                    data[currEntry-1].end = Number(found[8]) + 1000*endSecs;
-                    data[currEntry-1].duration = data[currEntry-1].end - data[currEntry-1].start;
-                    if (currEntry > 1) {
-                        var pause = data[currEntry - 1].start - data[currEntry - 2].end;
-                        if (pause > 0) data[currEntry - 2].pause = pause;
-                    }
-                    break;
-                case 3: //First line of text
-                    data[currEntry-1].text = lines[i];
-                    break;
-                default: //Subsequent lines of text
-                    data[currEntry-1].text += "\n"+lines[i];
-                    break;
-            }
+function processFileData(lines,startTime,countdown) {
+    var data = [];
+    var currEntry = 0;
+    setInnerTextBase("Processing subtitles...");
+    var entryPosition = 0;
+    for (i=0; i<lines.length; i++) {
+        entryPosition += 1;
+        if (lines[i] == "") {
+            entryPosition = 0;
         }
-        setInnerTextBase("Subtitles processed!");
-        countDown(5,data);
-    };
-    reader.onerror = function() {
-        setInnerTextBase("Unable to load file!");
-    };
+        switch(entryPosition) {
+            case 0: //Empty space
+                break;
+            case 1: //The index
+                currEntry = Number(lines[i]);
+                data.push({
+                    start: null,
+                    end: null,
+                    text: null,
+                    duration: null,
+                    pause: null
+                });
+                break;
+            case 2: //The times
+                var regex = new RegExp("(\\\d\\\d):(\\\d\\\d):(\\\d\\\d),(\\\d\\\d\\\d) --> (\\\d\\\d):(\\\d\\\d):(\\\d\\\d),(\\\d\\\d\\\d)");
+                var found = lines[i].match(regex);
+                var startHours = Number(found[1]);
+                var startMins = Number(found[2]) + 60*startHours;
+                var startSecs = Number(found[3]) + 60*startMins;
+                data[currEntry-1].start = Number(found[4]) + 1000*startSecs;
+                var endHours = Number(found[5]);
+                var endMins = Number(found[6]) + 60*endHours;
+                var endSecs = Number(found[7]) + 60*endMins;
+                data[currEntry-1].end = Number(found[8]) + 1000*endSecs;
+                data[currEntry-1].duration = data[currEntry-1].end - data[currEntry-1].start;
+                if (currEntry > 1) {
+                    var pause = data[currEntry - 1].start - data[currEntry - 2].end;
+                    if (pause > 0) data[currEntry - 2].pause = pause;
+                }
+                break;
+            case 3: //First line of text
+                data[currEntry-1].text = lines[i];
+                break;
+            default: //Subsequent lines of text
+                data[currEntry-1].text += "\n"+lines[i];
+                break;
+        }
+    }
+    //Calculate starting index
+    var startIndex = 0;
+    var startPause = data[0].start;
+    if (startTime > 0) {
+        while(data[startIndex].end < startTime) {
+            startIndex++;
+        }
+        startPause = data[startIndex].start - startTime;
+    }
+    setInnerTextBase("Subtitles processed!");
+    countDown(countdown,data,startPause,startIndex);
+}
+
+function onFormSubmit(form) {
+    var formData = new FormData(form);
+    var file = formData.get("file");
+    var start = formData.get("start");
+    var countdown = formData.get("countdown");
+    if (file) {
+        var timeRegex = new RegExp("(\\\d\\\d):(\\\d\\\d):(\\\d\\\d)");
+        var timeMatch = start.match(timeRegex);
+        var startTime = 1000*(Number(timeMatch[3]) + 60*(Number(timeMatch[2]) + 60*Number(timeMatch[1])));
+        let reader = new FileReader();
+        reader.readAsText(file);
+        reader.onload = function() {
+            var lines = reader.result.split("\n");
+            form.parentNode.style.backgroundColor = "#000000";
+            form.parentNode.removeChild(form);
+            processFileData(lines,startTime,countdown);
+        };
+        reader.onerror = function() {
+            setInnerTextBase("Unable to load file!");
+        };
+    }
+    return false;
 }
