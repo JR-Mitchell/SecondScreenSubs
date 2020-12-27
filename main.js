@@ -6,12 +6,25 @@ function getBodyRatio() {
 }
 
 /**
+ * Converts <b> and <i> elements into srt formatting
+ */
+function insertSpecialFormatting(textArray) {
+    for (i=0; i<textArray.length;i++) {
+        textArray[i] = textArray[i].replaceAll("<i>","</tspan><tspan dx=\"0\" dy=\"0\" font-style=\"italic\">")
+            .replaceAll("</i>","</tspan><tspan dx=\"0\" dy=\"0\">")
+            .replaceAll("<b>","</tspan><tspan dx=\"0\" dy=\"0\" font-weight=\"bold\">")
+            .replaceAll("</b>","</tspan><tspan dx=\"0\" dy=\"0\">");
+    }
+}
+
+/**
  * Converts text with \n newline characters into tspans
  */
 function putBetweenTspans(text) {
-    var header = "<tspan x=\"0\" dy=\"1.0em\">"
-    var footer = "</tspan>"
-    var brokenUp = text.split("\n")
+    var header = "<tspan x=\"0\" dy=\"1.0em\">";
+    var footer = "</tspan>";
+    var brokenUp = text.split("\n");
+    insertSpecialFormatting(brokenUp);
     return header + brokenUp.join(footer+header) + footer;
 }
 
